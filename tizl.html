@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Trapped In Zombie Land (TIZL)</title>
+<style>
+  :root {
+    --ink:        #0b1117;
+    --ink-2:      #0f1822;
+    --grid:       #16222e;
+    --player:     #3fe0d0;
+    --zombie:     #7cbf5a;
+    --zombie-dk:  #4d7d36;
+    --elite:      #c06ddb;
+    --elite-dk:   #7e3f96;
+    --bomb:       #ffb02e;
+    --bomb-hot:   #ff7a18;
+    --trap:       #c95f5f;
+    --speed:      #4ea8ff;
+    --reju:       #5ce08a;
+    --danger:     #ff5470;
+    --text:       #dfe9f0;
+    --text-dim:   #6f8597;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--ink); }
+  body {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    color: var(--text);
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+  #game { position: fixed; inset: 0; display: block; }
+
+  /* ---- HUD ---- */
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 14px;
+    font-size: 13px; letter-spacing: 0.04em;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(7,11,15,0.92), rgba(7,11,15,0));
+  }
+  #hud .btns { display: flex; gap: 8px; pointer-events: auto; }
+  #hud button {
+    font: inherit; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text); background: var(--ink-2);
+    border: 1px solid #24384a; border-radius: 4px;
+    padding: 7px 12px; cursor: pointer;
+    transition: border-color .12s, color .12s, background .12s;
+  }
+  #hud button:hover { border-color: var(--player); color: var(--player); }
+  #hud button:active { background: #14222e; }
+  #exitBtn:hover { border-color: var(--danger); color: var(--danger); }
+  #spacer { flex: 1; }
+  #stats { display: flex; gap: 18px; align-items: baseline; }
+  #stats .val { color: var(--text); font-size: 15px; }
+  #stats .lbl { color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; }
+  #stats .stat { display: flex; flex-direction: column; line-height: 1.2; }
+
+  /* ---- bottom-left status ---- */
+  #status {
+    position: fixed; left: 14px; bottom: 14px;
+    width: min(300px, 60vw);
+    pointer-events: none;
+  }
+  #hpTrack {
+    height: 14px; border: 1px solid #24384a; border-radius: 3px;
+    background: #0a0f14; overflow: hidden;
+  }
+  #hpFill { height: 100%; width: 100%; background: linear-gradient(90deg, var(--reju), #b9e05c); transition: width .12s linear; }
+  #statusRow { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12px; }
+  #mobRow { display: flex; gap: 14px; margin-top: 6px; font-size: 11px; color: var(--text-dim); letter-spacing: 0.04em; }
+  #mobRow .mob { display: inline-flex; align-items: center; gap: 5px; }
+  #mobRow #zCount, #mobRow #eCount { color: var(--text); }
+  #mobRow .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  #mobRow .mob.z .dot { background: var(--zombie); }
+  #mobRow .mob.e .dot { background: var(--elite); }
+  #buffs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .buff { font-size: 10px; letter-spacing: 0.1em; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; }
+  .buff.spd { color: var(--speed); border: 1px solid var(--speed); }
+  .buff.reju { color: var(--reju); border: 1px solid var(--reju); }
+  .buff.blast { color: var(--bomb); border: 1px solid var(--bomb); }
+  .buff.slow { color: var(--trap); border: 1px solid var(--trap); }
+  #bombCount .num { color: var(--bomb); }
+
+  /* ---- overlays ---- */
+  #overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 18px;
+    background: rgba(7,11,15,0.86); backdrop-filter: blur(2px);
+    text-align: center; padding: 24px;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h1 {
+    font-size: clamp(30px, 7vw, 58px); font-weight: 700; letter-spacing: 0.02em;
+    color: var(--bomb); text-transform: uppercase;
+  }
+  #overlay h1 .sub { display: block; font-size: 13px; letter-spacing: 0.4em; color: var(--text-dim); margin-top: 8px; }
+  #overlay p { color: var(--text-dim); font-size: 14px; max-width: 440px; line-height: 1.6; }
+  #overlay .final { color: var(--text); font-size: 16px; }
+  #overlay .final b { color: var(--bomb); }
+  #playBtn {
+    font: inherit; font-size: 15px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--ink); background: var(--bomb);
+    border: none; border-radius: 5px; padding: 14px 34px; cursor: pointer;
+    transition: transform .1s, box-shadow .12s;
+    box-shadow: 0 0 0 1px var(--bomb-hot);
+  }
+  #playBtn:hover { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(255,122,24,0.35); }
+  #turboToggle {
+    display: inline-flex; align-items: center; gap: 9px; cursor: pointer;
+    font-size: 13px; letter-spacing: 0.06em; color: var(--text);
+    padding: 8px 14px; border: 1px solid #24384a; border-radius: 5px; background: var(--ink-2);
+  }
+  #turboToggle input { width: 16px; height: 16px; accent-color: var(--bomb); cursor: pointer; }
+  #turboBadge {
+    display: none; align-self: center; margin-left: 4px;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink); background: var(--bomb); border-radius: 3px; padding: 3px 7px; font-weight: 700;
+  }
+  #turboBadge.show { display: inline-block; }
+  #pausedTag {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    font-size: clamp(24px, 6vw, 48px); letter-spacing: 0.3em; color: var(--text-dim);
+    text-transform: uppercase; pointer-events: none;
+  }
+  #pausedTag.show { display: flex; }
+
+  #toast {
+    position: fixed; top: 64px; left: 50%; transform: translateX(-50%) translateY(-8px);
+    max-width: min(560px, 92vw); text-align: center;
+    padding: 11px 18px; border-radius: 6px;
+    background: rgba(20,12,8,0.92); border: 1px solid var(--bomb);
+    color: var(--bomb); font-size: 13px; letter-spacing: 0.06em; line-height: 1.4;
+    box-shadow: 0 6px 26px rgba(255,122,24,0.25);
+    opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s;
+    z-index: 5;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  @media (max-width: 600px) { #toast { top: 96px; font-size: 12px; } }
+
+  /* ---- phones / narrow screens: keep the HUD from overflowing ---- */
+  @media (max-width: 600px) {
+    #hud { flex-wrap: wrap; gap: 6px 8px; padding: 8px 10px; font-size: 11px; }
+    #hud #spacer { display: none; }
+    #hud button { padding: 6px 9px; font-size: 11px; }
+    #stats { gap: 12px; margin-left: auto; }
+    #stats .val { font-size: 13px; }
+    #stats .lbl { font-size: 9px; }
+    #status { width: min(260px, 70vw); bottom: 10px; left: 10px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div class="btns">
+    <button id="spawnBtn" title="Spawn 5 zombies + a Blast pickup">Spawn</button>
+    <button id="moveBtn" title="Switch movement scheme">Move: Follow</button>
+    <button id="pauseBtn">Pause</button>
+    <span id="turboBadge">Turbo</span>
+  </div>
+  <div id="spacer"></div>
+  <div id="stats">
+    <div class="stat"><span class="lbl">Score</span><span class="val" id="scoreVal">0</span></div>
+    <div class="stat"><span class="lbl">High Lvl</span><span class="val" id="highVal">1</span></div>
+    <div class="stat"><span class="lbl">Level</span><span class="val" id="levelVal">1</span></div>
+  </div>
+  <div class="btns"><button id="exitBtn">Exit</button></div>
+</div>
+
+<div id="status">
+  <div id="hpTrack"><div id="hpFill"></div></div>
+  <div id="mobRow">
+    <span class="mob z"><span class="dot"></span>Zombies <span id="zCount">0</span></span>
+    <span class="mob e"><span class="dot"></span>Elites <span id="eCount">0</span></span>
+  </div>
+  <div id="statusRow">
+    <div id="bombCount">Bombs <span class="num" id="bombVal">0</span></div>
+    <div id="buffs"></div>
+  </div>
+</div>
+
+<div id="pausedTag">Paused</div>
+<div id="toast"></div>
+
+<div id="overlay">
+  <h1>Trapped In Zombie Land<span class="sub">TIZL · plant · move · survive</span></h1>
+  <p>You plant a bomb every 2 seconds, right where you stand. Each bomb explodes in an area — full damage at the core, less toward the edge — and the blast catches you too if you're standing in it. Grab a <b>B</b> pickup to double bomb damage for a while. Survive to level 11 and dying elites start bursting into swarms. Keep moving. Move with the floating joystick — touch anywhere and drag — or tap <b>Move</b> to switch to drag-to-follow.</p>
+  <p class="final" id="finalLine" style="display:none;"></p>
+  <label id="turboToggle"><input type="checkbox" id="turboChk"> Turbo Mode — 2× game speed</label>
+  <button id="playBtn">Play</button>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- constants (from spec) ----------
+  const C = {
+    PLAYER_HP: 100,
+    PLAYER_SPEED: 4,         // units/frame @60fps
+    PLAYER_R: 13,            // a bit bigger, still smaller than every zombie (18px+)
+    REGEN_AMT: 1,            // per 2s
+    REGEN_INTERVAL: 2,
+    BOMB_PLANT_INTERVAL: 2,
+    BOMB_R: 5,
+    BOMB_LIFE: 6,            // expires after 6s (no damage)
+    BOMB_MAX: 0,             // 0 = no concurrent limit
+    OVERLAP_FRAC: 0.5,       // enemies closer than (rA+rB)*this are "stacked" and scatter
+    SCATTER_DUR: 0.5,        // seconds enemies scatter apart on overlap
+    SCATTER_SPEED_MULT: 1.25, // +25% move speed while scattering
+    BOMB_AOE: 15,
+    BOMB_MIN_SPACING: 15,    // can't plant nearer than this
+    AOE_MULT: 4,             // Blast-buff AoE radius = bomb size x this (was 3)
+    AOE_INNER_FRAC: 0.6,     // inner (50%) zone as a fraction of full AoE; beyond it = edge (25%)
+    DMG_FULL: 20,            // direct hit (zombie that touches the bomb)
+    DMG_HALF: 10,            // 50% — inner blast zone
+    DMG_QUARTER: 5,          // 25% — outer edge band
+    POWERUP_INTERVAL: 15,
+    POWERUP_LIFE: 10,           // seconds a powerup stays on the map before vanishing
+    BUFF_DURATION: 10,          // base; +2s per 10 levels (see buffDuration())
+    BUFF_BONUS_PER_10: 2,
+    SPEED_MULT: 1.25,
+    BUFF_MAX_STACKS: 3,         // Speed and Health stack up to this many times
+    MELEE_PLAYER_DMG: 5,
+    MELEE_ZOMBIE_DMG: 10,
+    MELEE_SLOW_DUR: 3,
+    MELEE_COOLDOWN: 1,       // per-zombie, avoids per-frame drain
+    Z: {
+      standard: { interval: 10, hp: 20, speed: 2.0, r: 18, score: 20 },
+      elite:    { interval: 60, hp: 40, speed: 1.2, r: 26, score: 50 },
+    },
+    HP_GROWTH_PER_LEVEL: 0.15,  // newly spawned zombies gain 15% of base HP per level
+    ELITE_DEATH_SPAWN: 10,      // standard zombies spawned when an elite dies
+    ELITE_EXPLODE_LEVEL: 11,    // elites only burst from this level onward
+    FRENZY_DUR: 2,              // seconds the spawned minions scatter before going normal
+    FRENZY_SPEED: 4.5,          // units/frame while frenzied
+    TRAP_LEVEL: 20,             // slow traps appear from this level
+    TRAP_COUNT: 10,             // traps kept on the map
+    TRAP_R: 14,                 // trap radius (base px, scaled)
+    TRAP_MIN_SPACING: 100,      // min distance between traps (base px, scaled)
+    TRAP_SLOW_DUR: 2,           // seconds the player stays slowed
+    TRAP_SLOW_MULT: 0.75,       // 25% slow
+    TRAP_RESPAWN: 60,           // seconds before a sprung trap reappears elsewhere
+    STICK_MAX_R: 60,            // max joystick knob travel (px)
+    STICK_DEADZONE: 8,          // no movement within this radius of the base (px)
+    HUD_TOP_MARGIN: 90,      // keep powerups/spawns clear of HUD
+    EDGE_MARGIN: 40,
+  };
+
+  const HS_KEY = "zombie_high_level";
+
+  // ---------- canvas ----------
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  let W = 0, H = 0, DPR = 1, S = 1;
+  const G = {};                 // scale-derived spatial values (recomputed on resize)
+  function computeScaled() {
+    // shrink entities + speeds on small screens so the arena stays playable.
+    // desktop (short side >= 780) -> S = 1; phones clamp at 0.55.
+    S = Math.max(0.55, Math.min(1, Math.min(W, H) / 780));
+    G.playerR       = C.PLAYER_R * S;
+    G.playerSpeed   = C.PLAYER_SPEED * S;
+    G.bombR         = C.BOMB_R * S;
+    G.bombSpacing   = C.BOMB_MIN_SPACING * S;
+    G.frenzySpeed   = C.FRENZY_SPEED * S;
+    G.stickMaxR     = C.STICK_MAX_R * S;
+    G.stickDeadzone = C.STICK_DEADZONE * S;
+    G.knobR         = 22 * S;
+    G.powerupR      = 12 * S;
+    G.playerDot     = Math.max(2, C.PLAYER_R * 0.3 * S);
+    G.trapR         = C.TRAP_R * S;
+    G.trapSpacing   = C.TRAP_MIN_SPACING * S;
+  }
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    canvas.style.width = W + "px"; canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    computeScaled();
+  }
+  function onResizeEvent() {
+    const prevS = S;
+    resize();
+    // rescale live entities so rotating/resizing keeps proportions
+    if (state && prevS) {
+      const ratio = S / prevS;
+      if (ratio !== 1) {
+        for (const z of state.zombies) { z.r *= ratio; z.speed *= ratio; }
+        for (const b of state.bombs) b.r *= ratio;
+        for (const u of state.powerups) u.r *= ratio;
+        for (const t of state.traps) t.r *= ratio;
+      }
+    }
+  }
+  window.addEventListener("resize", onResizeEvent);
+  resize();
+
+  // ---------- high score (localStorage w/ in-memory fallback) ----------
+  let memHigh = 1;
+  function loadHigh() {
+    try { const v = parseInt(localStorage.getItem(HS_KEY), 10); if (!isNaN(v)) return v; }
+    catch (e) {}
+    return memHigh;
+  }
+  function saveHigh(v) {
+    memHigh = v;
+    try { localStorage.setItem(HS_KEY, String(v)); } catch (e) {}
+  }
+
+  // ---------- state ----------
+  let state = null;
+  function newState() {
+    return {
+      running: false,
+      over: false,
+      turbo: 1,                // 2 when Turbo Mode is on
+      time: 0,                 // game seconds (advances only while running)
+      score: 0,
+      high: loadHigh(),
+      player: { x: W / 2, y: H / 2, hp: C.PLAYER_HP, slowUntil: 0 },
+      target: { x: W / 2, y: H / 2 },
+      pointerDown: false,
+      moveMode: "stick",        // "follow" | "stick"  (joystick is the default)
+      stick: { active: false, baseX: 0, baseY: 0, knobX: 0, knobY: 0 },
+      zombies: [],
+      bombs: [],
+      powerups: [],
+      traps: [],
+      trapRespawns: [],        // queued game-times to respawn a sprung trap
+      trapsInit: false,
+      flashes: [],             // detonation visuals
+      hitFlash: 0,             // screen edge flash when player damaged
+      next: {
+        standard: 1.5,         // seed first zombie quickly
+        elite: 60,
+        bomb: C.BOMB_PLANT_INTERVAL,
+        powerup: C.POWERUP_INTERVAL,
+        regen: C.REGEN_INTERVAL,
+      },
+      buff: { speedUntil: 0, speedStacks: 0, rejuUntil: 0, rejuStacks: 0, blastUntil: 0 },
+      eliteAnnounced: false,    // has the level-11 elite-burst banner fired
+      trapsAnnounced: false,    // has the level-20 trap banner fired
+      toastText: "",
+      toastUntil: 0,
+    };
+  }
+
+  // ---------- helpers ----------
+  const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const speedActive = () => state.time < state.buff.speedUntil;
+  const rejuActive  = () => state.time < state.buff.rejuUntil;
+  // effective per-stack scaling (0 stacks when the buff has lapsed)
+  const speedMult = () => 1 + (C.SPEED_MULT - 1) * (speedActive() ? state.buff.speedStacks : 0);
+  const regenAmt  = () => C.REGEN_AMT * (1 + (rejuActive() ? state.buff.rejuStacks : 0));
+  const blastActive = () => state.time < state.buff.blastUntil;
+  const level = () => Math.floor(state.time / 60) + 1;
+  // buff duration grows +2s per 10 levels: 10s (L1-9), 12s (L10-19), ...
+  const buffDuration = () => C.BUFF_DURATION + Math.floor(level() / 10) * C.BUFF_BONUS_PER_10;
+
+  // ---------- spawning ----------
+  function spawnZombie(kind) {
+    const z = C.Z[kind];
+    const scaledHp = Math.round(z.hp * (1 + (level() - 1) * C.HP_GROWTH_PER_LEVEL));
+    // spawn just past a random edge
+    const side = Math.floor(rand(0, 4));
+    const rS = z.r * S;
+    let x, y;
+    if (side === 0) { x = rand(0, W); y = -rS - 5; }
+    else if (side === 1) { x = W + rS + 5; y = rand(0, H); }
+    else if (side === 2) { x = rand(0, W); y = H + rS + 5; }
+    else { x = -rS - 5; y = rand(0, H); }
+    state.zombies.push({
+      kind, x, y, hp: scaledHp, maxHp: scaledHp, r: rS, speed: z.speed * S, score: z.score,
+      slowUntil: 0, meleeCd: 0, frenzyUntil: 0, heading: 0, headingTimer: 0,
+      scatterUntil: 0, scatterHeading: 0,
+    });
+  }
+
+  function spawnMinions(x, y) {
+    const z = C.Z.standard;
+    const scaledHp = Math.round(z.hp * (1 + (level() - 1) * C.HP_GROWTH_PER_LEVEL));
+    for (let i = 0; i < C.ELITE_DEATH_SPAWN; i++) {
+      state.zombies.push({
+        kind: "standard",
+        x: x + rand(-8, 8) * S, y: y + rand(-8, 8) * S,
+        hp: scaledHp, maxHp: scaledHp, r: z.r * S, speed: z.speed * S, score: z.score,
+        slowUntil: 0, meleeCd: 0,
+        frenzyUntil: state.time + C.FRENZY_DUR,
+        heading: Math.random() * Math.PI * 2,
+        headingTimer: rand(0.15, 0.4),
+        scatterUntil: 0, scatterHeading: 0,
+      });
+    }
+  }
+
+  function placeTrap() {
+    // find a spot not within trapSpacing of any existing trap
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const x = rand(C.EDGE_MARGIN, W - C.EDGE_MARGIN);
+      const y = rand(C.HUD_TOP_MARGIN, H - C.EDGE_MARGIN);
+      let ok = true;
+      for (const t of state.traps) {
+        if (dist(x, y, t.x, t.y) < G.trapSpacing) { ok = false; break; }
+      }
+      if (ok) { state.traps.push({ x, y, r: G.trapR }); return; }
+    }
+    // fallback if the arena is too cramped to satisfy spacing
+    state.traps.push({
+      x: rand(C.EDGE_MARGIN, W - C.EDGE_MARGIN),
+      y: rand(C.HUD_TOP_MARGIN, H - C.EDGE_MARGIN), r: G.trapR,
+    });
+  }
+
+  function spawnPowerup(type) {
+    type = type || ["speed", "reju", "blast"][Math.floor(Math.random() * 3)];
+    state.powerups.push({
+      type,
+      x: rand(C.EDGE_MARGIN, W - C.EDGE_MARGIN),
+      y: rand(C.HUD_TOP_MARGIN, H - C.EDGE_MARGIN),
+      r: G.powerupR,
+      born: state.time,
+    });
+  }
+
+  // ---------- bomb planting ----------
+  function tryPlantBomb() {
+    for (const b of state.bombs) {
+      if (dist(state.player.x, state.player.y, b.x, b.y) < G.bombSpacing) return; // too close -> skip
+    }
+    state.bombs.push({ x: state.player.x, y: state.player.y, r: G.bombR, age: 0 });
+  }
+
+  function detonate(bomb, trigger) {
+    // AoE is now the default; the Blast buff doubles all tiers
+    const mult = blastActive() ? 2 : 1;
+    const aoe = bomb.r * C.AOE_MULT;
+    const inner = aoe * C.AOE_INNER_FRAC;
+    if (trigger) trigger.hp -= C.DMG_FULL * mult;            // direct touch = 100%
+    for (const z of state.zombies) {
+      if (z === trigger) continue;
+      const d = dist(bomb.x, bomb.y, z.x, z.y);
+      if (d <= inner + z.r) z.hp -= C.DMG_HALF * mult;       // inner zone = 50%
+      else if (d <= aoe + z.r) z.hp -= C.DMG_QUARTER * mult; // outer edge = 25%
+    }
+    const dp = dist(bomb.x, bomb.y, state.player.x, state.player.y);
+    if (dp <= inner + G.playerR) damagePlayer(C.DMG_HALF * mult);
+    else if (dp <= aoe + G.playerR) damagePlayer(C.DMG_QUARTER * mult);
+    state.flashes.push({ x: bomb.x, y: bomb.y, r: aoe, age: 0, life: blastActive() ? 0.42 : 0.35, aoe: blastActive() });
+  }
+
+  function damagePlayer(amt) {
+    state.player.hp -= amt;
+    state.hitFlash = 1;
+    if (state.player.hp <= 0) { state.player.hp = 0; endRun(); }
+  }
+
+  function reapZombies() {
+    for (let i = state.zombies.length - 1; i >= 0; i--) {
+      if (state.zombies[i].hp <= 0) {
+        const z = state.zombies[i];
+        state.score += z.score;
+        if (z.kind === "elite" && level() >= C.ELITE_EXPLODE_LEVEL) spawnMinions(z.x, z.y);
+        state.zombies.splice(i, 1);
+      }
+    }
+  }
+
+  // when enemies stack on the same spot, push them apart for a moment
+  function scatterOverlaps() {
+    const zs = state.zombies;
+    for (let i = 0; i < zs.length; i++) {
+      for (let j = i + 1; j < zs.length; j++) {
+        const a = zs[i], b = zs[j];
+        const d = dist(a.x, a.y, b.x, b.y);
+        if (d < (a.r + b.r) * C.OVERLAP_FRAC) {
+          let ax = a.x - b.x, ay = a.y - b.y;
+          if (Math.hypot(ax, ay) < 0.001) { const ang = Math.random() * Math.PI * 2; ax = Math.cos(ang); ay = Math.sin(ang); }
+          if (a.scatterUntil <= state.time) { a.scatterUntil = state.time + C.SCATTER_DUR; a.scatterHeading = Math.atan2(ay, ax); }
+          if (b.scatterUntil <= state.time) { b.scatterUntil = state.time + C.SCATTER_DUR; b.scatterHeading = Math.atan2(-ay, -ax); }
+        }
+      }
+    }
+  }
+
+  // ---------- update ----------
+  function update(dt) {
+    const dtf = dt * 60; // per-frame scale
+    state.time += dt;
+
+    // timed systems
+    if (state.time >= state.next.standard) { spawnZombie("standard"); state.next.standard += C.Z.standard.interval; }
+    if (state.time >= state.next.elite)    { spawnZombie("elite");    state.next.elite    += C.Z.elite.interval; }
+    if (state.time >= state.next.bomb)     { tryPlantBomb();          state.next.bomb     += C.BOMB_PLANT_INTERVAL / speedMult(); }
+    if (state.time >= state.next.powerup)  { spawnPowerup();          state.next.powerup  += C.POWERUP_INTERVAL; }
+    if (state.time >= state.next.regen) {
+      state.player.hp = Math.min(C.PLAYER_HP, state.player.hp + regenAmt());
+      state.next.regen += C.REGEN_INTERVAL;
+    }
+
+    // one-time warning when elites start bursting
+    if (!state.eliteAnnounced && level() >= C.ELITE_EXPLODE_LEVEL) {
+      state.eliteAnnounced = true;
+      state.toastText = "WARNING — Elites now burst into 10 zombies on death";
+      state.toastUntil = state.time + 5;
+    }
+    // initialise slow traps at level 20 (+ one-time warning)
+    if (!state.trapsInit && level() >= C.TRAP_LEVEL) {
+      state.trapsInit = true;
+      for (let i = 0; i < C.TRAP_COUNT; i++) placeTrap();
+      if (!state.trapsAnnounced) {
+        state.trapsAnnounced = true;
+        state.toastText = "WARNING — Slow traps scattered across the arena";
+        state.toastUntil = state.time + 5;
+      }
+    }
+    // respawn sprung traps when their timer is up
+    if (state.trapsInit) {
+      for (let i = state.trapRespawns.length - 1; i >= 0; i--) {
+        if (state.time >= state.trapRespawns[i]) { state.trapRespawns.splice(i, 1); placeTrap(); }
+      }
+    }
+
+    // player movement (mode-dependent)
+    const p = state.player;
+    const slowed = state.time < p.slowUntil;
+    const spd = G.playerSpeed * speedMult() * (slowed ? C.TRAP_SLOW_MULT : 1);
+    if (state.moveMode === "stick") {
+      const s = state.stick;
+      if (s.active) {
+        const vx = s.knobX - s.baseX, vy = s.knobY - s.baseY;
+        const len = Math.hypot(vx, vy);
+        if (len > G.stickDeadzone) {
+          const mag = Math.min(len, G.stickMaxR) / G.stickMaxR; // 0..1 analog
+          p.x += (vx / len) * spd * mag * dtf;
+          p.y += (vy / len) * spd * mag * dtf;
+        }
+      }
+    } else {
+      const ddx = state.target.x - p.x, ddy = state.target.y - p.y;
+      const d = Math.hypot(ddx, ddy);
+      if (d > 1) {
+        const step = Math.min(spd * dtf, d);
+        p.x += (ddx / d) * step; p.y += (ddy / d) * step;
+      }
+    }
+    p.x = Math.max(G.playerR, Math.min(W - G.playerR, p.x));
+    p.y = Math.max(G.playerR, Math.min(H - G.playerR, p.y));
+
+    // slow traps: only affect the player
+    for (let i = state.traps.length - 1; i >= 0; i--) {
+      const t = state.traps[i];
+      if (dist(t.x, t.y, p.x, p.y) <= t.r + G.playerR) {
+        p.slowUntil = state.time + C.TRAP_SLOW_DUR;
+        state.traps.splice(i, 1);
+        state.trapRespawns.push(state.time + C.TRAP_RESPAWN);
+      }
+    }
+
+    // zombies move + melee
+    scatterOverlaps();
+    for (const z of state.zombies) {
+      if (z.meleeCd > 0) z.meleeCd -= dt;
+      if (state.time < z.scatterUntil) {
+        // overlap scatter: dart apart at +50% speed; bounce off edges
+        const ss = z.speed * C.SCATTER_SPEED_MULT;
+        let nx = z.x + Math.cos(z.scatterHeading) * ss * dtf;
+        let ny = z.y + Math.sin(z.scatterHeading) * ss * dtf;
+        if (nx < z.r) { nx = z.r; z.scatterHeading = Math.PI - z.scatterHeading; }
+        else if (nx > W - z.r) { nx = W - z.r; z.scatterHeading = Math.PI - z.scatterHeading; }
+        if (ny < z.r) { ny = z.r; z.scatterHeading = -z.scatterHeading; }
+        else if (ny > H - z.r) { ny = H - z.r; z.scatterHeading = -z.scatterHeading; }
+        z.x = nx; z.y = ny;
+      } else if (state.time < z.frenzyUntil) {
+        // frenzy: scatter fast in random, changing directions; bounce off edges
+        z.headingTimer -= dt;
+        if (z.headingTimer <= 0) { z.heading = Math.random() * Math.PI * 2; z.headingTimer = rand(0.15, 0.4); }
+        let nx = z.x + Math.cos(z.heading) * G.frenzySpeed * dtf;
+        let ny = z.y + Math.sin(z.heading) * G.frenzySpeed * dtf;
+        if (nx < z.r) { nx = z.r; z.heading = Math.PI - z.heading; }
+        else if (nx > W - z.r) { nx = W - z.r; z.heading = Math.PI - z.heading; }
+        if (ny < z.r) { ny = z.r; z.heading = -z.heading; }
+        else if (ny > H - z.r) { ny = H - z.r; z.heading = -z.heading; }
+        z.x = nx; z.y = ny;
+      } else {
+        const zspd = z.speed * (state.time < z.slowUntil ? 0.5 : 1);
+        const zx = p.x - z.x, zy = p.y - z.y, zd = Math.hypot(zx, zy);
+        if (zd > 0.001) { z.x += (zx / zd) * zspd * dtf; z.y += (zy / zd) * zspd * dtf; }
+      }
+      // melee check (after movement)
+      const md = dist(z.x, z.y, p.x, p.y);
+      if (md <= z.r + G.playerR && z.meleeCd <= 0) {
+        damagePlayer(C.MELEE_PLAYER_DMG);
+        z.hp -= C.MELEE_ZOMBIE_DMG;
+        z.slowUntil = state.time + C.MELEE_SLOW_DUR;
+        z.meleeCd = C.MELEE_COOLDOWN;
+      }
+    }
+
+    // bombs: age / expire / contact-detonate
+    for (let i = state.bombs.length - 1; i >= 0; i--) {
+      const b = state.bombs[i];
+      b.age += dt;
+      if (b.age >= C.BOMB_LIFE) { state.bombs.splice(i, 1); continue; } // expire: no damage
+      let trigger = null;
+      for (const z of state.zombies) {
+        if (dist(b.x, b.y, z.x, z.y) <= b.r + z.r) { trigger = z; break; }
+      }
+      if (trigger) { detonate(b, trigger); state.bombs.splice(i, 1); }
+    }
+    reapZombies();
+
+    // powerups: pickup or expire
+    for (let i = state.powerups.length - 1; i >= 0; i--) {
+      const u = state.powerups[i];
+      if (dist(u.x, u.y, p.x, p.y) <= u.r + G.playerR) {
+        if (u.type === "speed") {
+          state.buff.speedStacks = speedActive() ? Math.min(C.BUFF_MAX_STACKS, state.buff.speedStacks + 1) : 1;
+          state.buff.speedUntil = state.time + buffDuration();
+        } else if (u.type === "reju") {
+          state.buff.rejuStacks = rejuActive() ? Math.min(C.BUFF_MAX_STACKS, state.buff.rejuStacks + 1) : 1;
+          state.buff.rejuUntil = state.time + buffDuration();
+        } else {
+          state.buff.blastUntil = state.time + buffDuration();
+        }
+        state.powerups.splice(i, 1);
+      } else if (state.time - u.born >= C.POWERUP_LIFE) {
+        state.powerups.splice(i, 1); // not collected in time -> vanish
+      }
+    }
+
+    // flashes
+    for (let i = state.flashes.length - 1; i >= 0; i--) {
+      state.flashes[i].age += dt;
+      if (state.flashes[i].age >= state.flashes[i].life) state.flashes.splice(i, 1);
+    }
+    if (state.hitFlash > 0) state.hitFlash = Math.max(0, state.hitFlash - dt * 3);
+  }
+
+  // ---------- render ----------
+  function drawGrid() {
+    ctx.fillStyle = getCss("--ink");
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = getCss("--grid");
+    ctx.lineWidth = 1;
+    const g = 48;
+    ctx.beginPath();
+    for (let x = (W % g) / 2; x < W; x += g) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for (let y = (H % g) / 2; y < H; y += g) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+  }
+
+  let cssCache = {};
+  function getCss(v) {
+    if (!cssCache[v]) cssCache[v] = getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+    return cssCache[v];
+  }
+
+  function render() {
+    drawGrid();
+
+    // slow traps (floor hazards)
+    for (const t of state.traps) {
+      const col = getCss("--trap");
+      ctx.beginPath(); ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(201,95,95,0.13)"; ctx.fill();
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+      ctx.setLineDash([]);
+      // inner spikes (X) to read as a hazard
+      const s = t.r * 0.5;
+      ctx.strokeStyle = col; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(t.x - s, t.y - s); ctx.lineTo(t.x + s, t.y + s);
+      ctx.moveTo(t.x - s, t.y + s); ctx.lineTo(t.x + s, t.y - s);
+      ctx.stroke();
+    }
+
+    // detonation flashes (signature moment)
+    for (const f of state.flashes) {
+      const t = f.age / f.life;            // 0..1
+      const r = f.r * (0.5 + t * 1.4);
+      ctx.globalAlpha = (1 - t) * 0.9;
+      ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, Math.PI * 2);
+      ctx.strokeStyle = getCss("--bomb-hot"); ctx.lineWidth = 3 * (1 - t) + 1; ctx.stroke();
+      ctx.globalAlpha = (1 - t) * 0.35;
+      ctx.fillStyle = getCss("--bomb"); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // powerups
+    for (const u of state.powerups) {
+      const col = u.type === "speed" ? getCss("--speed") : u.type === "reju" ? getCss("--reju") : getCss("--bomb");
+      const label = u.type === "speed" ? "S" : u.type === "reju" ? "H" : "B";
+      const remaining = C.POWERUP_LIFE - (state.time - u.born);
+      // blink faster in the final 3s before it vanishes
+      const alpha = remaining < 3 ? (Math.sin(state.time * 16) > -0.2 ? 1 : 0.25) : 1;
+      ctx.globalAlpha = alpha;
+      const pulse = 1 + 0.12 * Math.sin(state.time * 6 + u.born);
+      ctx.beginPath(); ctx.arc(u.x, u.y, u.r * pulse, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fill();
+      ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = col; ctx.font = "bold 12px ui-monospace, monospace";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(label, u.x, u.y + 0.5);
+      ctx.globalAlpha = 1;
+    }
+
+    // bombs
+    for (const b of state.bombs) {
+      const tleft = 1 - b.age / C.BOMB_LIFE;
+      // AoE is always on now: faint ring by default, brighter + inner ring under Blast
+      const aoe = b.r * C.AOE_MULT;
+      if (blastActive()) {
+        ctx.beginPath(); ctx.arc(b.x, b.y, aoe, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255,176,46,0.20)"; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.beginPath(); ctx.arc(b.x, b.y, aoe * C.AOE_INNER_FRAC, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255,176,46,0.30)"; ctx.lineWidth = 1.5; ctx.stroke();
+      } else {
+        ctx.beginPath(); ctx.arc(b.x, b.y, aoe, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(255,176,46,0.10)"; ctx.lineWidth = 1; ctx.stroke();
+      }
+      // blink faster as it nears expiry
+      const blink = b.age > C.BOMB_LIFE * 0.55 ? (Math.sin(b.age * 18) > 0 ? 1 : 0.35) : 1;
+      ctx.globalAlpha = blink;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      ctx.fillStyle = tleft > 0.4 ? getCss("--bomb") : getCss("--bomb-hot"); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // zombies
+    for (const z of state.zombies) {
+      const slowed = state.time < z.slowUntil;
+      const frenzied = state.time < z.frenzyUntil;
+      const scattering = state.time < z.scatterUntil;
+      const body = z.kind === "elite" ? getCss("--elite") : getCss("--zombie");
+      const edge = z.kind === "elite" ? getCss("--elite-dk") : getCss("--zombie-dk");
+      ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2);
+      ctx.fillStyle = body; ctx.fill();
+      ctx.lineWidth = Math.max(1.5, 3 * S);
+      ctx.strokeStyle = scattering ? "#e8eef2" : frenzied ? getCss("--bomb") : slowed ? getCss("--speed") : edge;
+      ctx.stroke();
+      // hp pip when damaged
+      const max = z.maxHp;
+      if (z.hp < max) {
+        const pipH = Math.max(2, 4 * S), pipGap = 7 * S;
+        ctx.fillStyle = "rgba(0,0,0,0.45)";
+        ctx.fillRect(z.x - z.r, z.y - z.r - pipGap, z.r * 2, pipH);
+        ctx.fillStyle = getCss("--danger");
+        ctx.fillRect(z.x - z.r, z.y - z.r - pipGap, z.r * 2 * (z.hp / max), pipH);
+      }
+    }
+
+    // player
+    const p = state.player;
+    ctx.beginPath(); ctx.arc(p.x, p.y, G.playerR, 0, Math.PI * 2);
+    ctx.fillStyle = getCss("--player"); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = "#0a1a1a"; ctx.stroke();
+    // small heading-less core dot
+    ctx.beginPath(); ctx.arc(p.x, p.y, G.playerDot, 0, Math.PI * 2);
+    ctx.fillStyle = "#0a1a1a"; ctx.fill();
+
+    // virtual joystick
+    if (state.moveMode === "stick" && state.stick.active) {
+      const s = state.stick;
+      // base ring
+      ctx.beginPath(); ctx.arc(s.baseX, s.baseY, G.stickMaxR, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.04)"; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = "rgba(63,224,208,0.35)"; ctx.stroke();
+      // clamped knob position for drawing
+      let kx = s.knobX - s.baseX, ky = s.knobY - s.baseY;
+      const kl = Math.hypot(kx, ky) || 1;
+      const cl = Math.min(kl, G.stickMaxR);
+      kx = s.baseX + (kx / kl) * cl; ky = s.baseY + (ky / kl) * cl;
+      ctx.beginPath(); ctx.arc(kx, ky, G.knobR, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(63,224,208,0.85)"; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = "#0a1a1a"; ctx.stroke();
+    }
+  }
+
+  // ---------- HUD sync ----------
+  const el = {
+    score: document.getElementById("scoreVal"),
+    high: document.getElementById("highVal"),
+    levelv: document.getElementById("levelVal"),
+    hp: document.getElementById("hpFill"),
+    bomb: document.getElementById("bombVal"),
+    zc: document.getElementById("zCount"),
+    ec: document.getElementById("eCount"),
+    buffs: document.getElementById("buffs"),
+    toast: document.getElementById("toast"),
+  };
+  function syncHud() {
+    el.score.textContent = state.score;
+    el.high.textContent = state.high;
+    el.levelv.textContent = level();
+    el.hp.style.width = (state.player.hp / C.PLAYER_HP * 100) + "%";
+    el.hp.style.background = state.player.hp < 30
+      ? "linear-gradient(90deg,#ff5470,#ff8a3d)"
+      : "linear-gradient(90deg,#5ce08a,#b9e05c)";
+    el.bomb.textContent = state.bombs.length;
+    let zc = 0, ec = 0;
+    for (const z of state.zombies) { if (z.kind === "elite") ec++; else zc++; }
+    el.zc.textContent = zc;
+    el.ec.textContent = ec;
+    let b = "";
+    const secs = (until) => Math.max(0, Math.ceil(until - state.time));
+    if (speedActive()) b += `<span class="buff spd">Spd${state.buff.speedStacks > 1 ? " ×" + state.buff.speedStacks : ""} ${secs(state.buff.speedUntil)}s</span>`;
+    if (rejuActive())  b += `<span class="buff reju">Regen${state.buff.rejuStacks > 1 ? " ×" + state.buff.rejuStacks : ""} ${secs(state.buff.rejuUntil)}s</span>`;
+    if (blastActive()) b += `<span class="buff blast">Blast ${secs(state.buff.blastUntil)}s</span>`;
+    if (state.time < state.player.slowUntil) b += `<span class="buff slow">Slow ${secs(state.player.slowUntil)}s</span>`;
+    el.buffs.innerHTML = b;
+
+    // temporary announcement banner
+    const showToast = state.time < state.toastUntil;
+    if (showToast && el.toast.textContent !== state.toastText) el.toast.textContent = state.toastText;
+    el.toast.classList.toggle("show", showToast);
+  }
+
+  // ---------- loop ----------
+  let lastT = 0;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!lastT) lastT = now;
+    let dt = (now - lastT) / 1000; lastT = now;
+    dt = Math.min(dt, 0.05); // clamp after tab switches
+    if (state.running && !state.over) { update(dt * state.turbo); }
+    render();
+    syncHud();
+  }
+  requestAnimationFrame(frame);
+
+  // ---------- controls / lifecycle ----------
+  const overlay = document.getElementById("overlay");
+  const finalLine = document.getElementById("finalLine");
+  const playBtn = document.getElementById("playBtn");
+  const pauseBtn = document.getElementById("pauseBtn");
+  const spawnBtn = document.getElementById("spawnBtn");
+  const moveBtn = document.getElementById("moveBtn");
+  const exitBtn = document.getElementById("exitBtn");
+  const pausedTag = document.getElementById("pausedTag");
+  const turboChk = document.getElementById("turboChk");
+  const turboBadge = document.getElementById("turboBadge");
+
+  function startRun() {
+    state = newState();
+    state.running = true;
+    state.turbo = turboChk.checked ? 2 : 1;
+    turboBadge.classList.toggle("show", state.turbo > 1);
+    overlay.classList.add("hidden");
+    pausedTag.classList.remove("show");
+    pauseBtn.textContent = "Pause";
+    moveBtn.textContent = "Move: Stick";
+    lastT = 0;
+  }
+
+  function endRun() {
+    if (state.over) return;
+    state.over = true; state.running = false;
+    const lvl = level();
+    if (lvl > state.high) { state.high = lvl; saveHigh(lvl); }
+    finalLine.style.display = "block";
+    finalLine.innerHTML = `Score <b>${state.score}</b> &nbsp;·&nbsp; reached Level <b>${lvl}</b> &nbsp;·&nbsp; best Level <b>${state.high}</b>`;
+    document.querySelector("#overlay h1").innerHTML = 'Run Over<span class="sub">they got through</span>';
+    playBtn.textContent = "Play Again";
+    overlay.classList.remove("hidden");
+  }
+
+  playBtn.addEventListener("click", startRun);
+  exitBtn.addEventListener("click", () => { if (state && !state.over) endRun(); });
+  spawnBtn.addEventListener("click", () => {
+    if (!state || !state.running || state.over) return;
+    for (let i = 0; i < 5; i++) spawnZombie("standard");
+    spawnPowerup("blast");
+  });
+  moveBtn.addEventListener("click", () => {
+    if (!state) return;
+    state.moveMode = state.moveMode === "follow" ? "stick" : "follow";
+    moveBtn.textContent = "Move: " + (state.moveMode === "follow" ? "Follow" : "Stick");
+    // clear any in-progress input on switch
+    state.pointerDown = false;
+    state.stick.active = false;
+    state.target.x = state.player.x; state.target.y = state.player.y;
+  });
+  pauseBtn.addEventListener("click", () => {
+    if (!state || state.over) return;
+    state.running = !state.running;
+    pauseBtn.textContent = state.running ? "Pause" : "Resume";
+    pausedTag.classList.toggle("show", !state.running);
+    if (state.running) lastT = 0; // avoid dt spike on resume
+  });
+
+  // pointer: branches on movement mode
+  function localXY(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  canvas.addEventListener("pointerdown", (e) => {
+    if (!state || !state.running) return;
+    const pt = localXY(e);
+    state.pointerDown = true;
+    canvas.setPointerCapture(e.pointerId);
+    if (state.moveMode === "stick") {
+      state.stick.active = true;
+      state.stick.baseX = pt.x; state.stick.baseY = pt.y;
+      state.stick.knobX = pt.x; state.stick.knobY = pt.y;
+    } else {
+      state.target.x = pt.x; state.target.y = pt.y;
+    }
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!state || !state.running || !state.pointerDown) return;
+    const pt = localXY(e);
+    if (state.moveMode === "stick") {
+      state.stick.knobX = pt.x; state.stick.knobY = pt.y;
+    } else {
+      state.target.x = pt.x; state.target.y = pt.y;
+    }
+  });
+  function releasePointer() {
+    if (!state) return;
+    state.pointerDown = false;
+    state.stick.active = false;
+  }
+  canvas.addEventListener("pointerup", releasePointer);
+  canvas.addEventListener("pointercancel", releasePointer);
+
+  // keyboard convenience
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space" && state && !state.over) { e.preventDefault(); pauseBtn.click(); }
+  });
+
+  // init high score display
+  state = newState();
+  syncHud();
+})();
+</script>
+</body>
+</html>
